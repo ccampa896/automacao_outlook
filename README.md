@@ -1,27 +1,30 @@
 # Outlook Email to Telegram Notifier
 
 Este projeto automatiza o envio de notificações para o Telegram sempre que um novo e-mail chega na sua caixa de entrada do Outlook Desktop. O script lê assunto, remetente, corpo do e-mail e envia todos os anexos para um grupo ou canal do Telegram.
+
 Ideal para ambientes corporativos que utilizam Microsoft Outlook e não têm suporte a IMAP/POP externo.
 
 ---
 
 ## Funcionalidades
 
-* Monitora novos e-mails de uma conta selecionada do Outlook (não envia e-mails antigos).
-* Encaminha o texto do e-mail (assunto, remetente, corpo) para o Telegram com formatação HTML.
-* Envia todos os anexos do e-mail para o Telegram.
-* Persistência do último e-mail processado: mesmo após reiniciar, nunca repete e-mails já enviados.
-* Delay automático entre envio de anexos para evitar bloqueio por excesso de requisições.
-* Tratamento de nomes de arquivos de anexos e sanitização do texto para evitar erros de API.
+- Monitora novos e-mails de uma conta selecionada do Outlook (não envia e-mails antigos).
+- Persistência robusta: utiliza banco de dados SQLite para garantir que e-mails não sejam reenviados, mesmo após reiniciar o script.
+- Envia texto do e-mail (assunto, remetente, corpo) para o Telegram com formatação HTML e sanitização para evitar erros de API.
+- Envia todos os anexos do e-mail para o Telegram, com nomes de arquivos normalizados.
+- Delay automático entre envio de anexos para evitar bloqueio por excesso de requisições (limite do Telegram).
+- Logs detalhados no console, incluindo data/hora de cada verificação e detalhes de erros.
+- Checkpoint automático: na primeira execução, marca o e-mail mais recente como referência e só processa e-mails novos a partir daí.
+- Compatível com múltiplas contas do Outlook: permite escolher qual conta monitorar.
 
 ---
 
 ## Pré-requisitos
 
-* **Windows** com Microsoft Outlook (2010 ou superior) instalado e configurado.
-* **Python 3.8+** instalado.
-* **Conta no Telegram** (grupo ou canal para notificação).
-* Permissões de administrador se necessário (para acessar o Outlook via COM).
+- **Windows** com Microsoft Outlook (2010 ou superior) instalado e configurado.
+- **Python 3.8+** instalado.
+- **Conta no Telegram** (grupo ou canal para notificação).
+- Permissões de administrador se necessário (para acessar o Outlook via COM).
 
 ### Bibliotecas Python necessárias
 
@@ -29,14 +32,12 @@ Abra o terminal/prompt de comando na pasta do projeto e execute:
 
 ```sh
 pip install pywin32 requests python-dotenv certifi
-python -m pip install --upgrade certifi
-python -m certifi
 ```
 
-* `pywin32`: Automação do Outlook.
-* `requests`: Comunicação HTTP com a API do Telegram.
-* `python-dotenv`: Carregamento do arquivo `.env` com suas configurações.
-* `certifi`: Corrige problemas de SSL e certificados em ambiente corporativo.
+- `pywin32`: Automação do Outlook.
+- `requests`: Comunicação HTTP com a API do Telegram.
+- `python-dotenv`: Carregamento do arquivo `.env` com suas configurações.
+- `certifi`: Corrige problemas de SSL e certificados em ambiente corporativo.
 
 ---
 
@@ -44,25 +45,25 @@ python -m certifi
 
 ### 1. Criar um bot
 
-* Procure por [@BotFather](https://t.me/BotFather) no Telegram.
-* Envie `/newbot`, siga as instruções e salve o **TOKEN** fornecido.
+- Procure por [@BotFather](https://t.me/BotFather) no Telegram.
+- Envie `/newbot`, siga as instruções e salve o **TOKEN** fornecido.
 
 ### 2. Criar o grupo/canal
 
-* Crie um grupo ou canal no Telegram.
-* Adicione o bot criado como membro do grupo.
+- Crie um grupo ou canal no Telegram.
+- Adicione o bot criado como membro do grupo.
 
 ### 3. Descobrir o `chat_id` do grupo
 
-* No grupo, envie qualquer mensagem.
-* Acesse no navegador:
+- No grupo, envie qualquer mensagem.
+- Acesse no navegador:
 
   ```
   https://api.telegram.org/botSEU_TOKEN/getUpdates
   ```
 
   Procure pelo campo `"chat":{"id":-XXXXXXXXXX,...`.
-  O número (negativo) é o seu **CHAT\_ID**.
+  O número (negativo) é o seu **CHAT_ID**.
 
 ---
 
@@ -89,53 +90,55 @@ python automail.py
 ```
 
 3. O terminal vai listar todas as contas do Outlook. Digite o número da conta que deseja monitorar.
-
 4. O script irá ignorar e-mails antigos e processar apenas os novos que chegarem.
-   Você verá logs detalhados no console com data/hora de cada verificação.
+5. Você verá logs detalhados no console com data/hora de cada verificação.
 
 ---
 
 ## Explicação do funcionamento
 
-* O script monitora a caixa de entrada da conta Outlook selecionada.
-* Lê e armazena o `EntryID` do último e-mail processado no arquivo `last_entryid.txt` junto da data/hora.
-* Em cada ciclo (default: 5 minutos), verifica se há novos e-mails:
-
-  * Se houver, envia mensagem para o Telegram com remetente, assunto e corpo do e-mail.
-  * Todos os anexos são enviados para o grupo, um por um, com um atraso de 3 segundos entre cada envio para evitar limites da API.
-  * Se o e-mail já foi enviado anteriormente, ele é ignorado (mesmo após reiniciar).
-* O texto do e-mail é sanitizado e truncado para evitar erros 400 da API do Telegram.
-* Nomes de arquivos de anexo são limpos para evitar caracteres inválidos.
+- O script monitora a caixa de entrada da conta Outlook selecionada.
+- Utiliza um banco de dados SQLite (`email_sent.db`) para registrar todos os e-mails já enviados, garantindo que não haja duplicidade mesmo após reiniciar.
+- Na primeira execução, marca o e-mail mais recente como referência (checkpoint) e só processa e-mails novos a partir desse ponto.
+- A cada ciclo (default: 5 minutos), verifica se há novos e-mails:
+  - Se houver, envia mensagem para o Telegram com remetente, assunto e corpo do e-mail (com sanitização e truncamento para evitar erros 400 da API).
+  - Todos os anexos são enviados para o grupo, um por um, com um atraso de 3 segundos entre cada envio para evitar limites da API.
+  - Se o e-mail já foi enviado anteriormente, ele é ignorado (mesmo após reiniciar).
+- Nomes de arquivos de anexo são normalizados para evitar caracteres inválidos.
+- Logs detalhados são exibidos no console, incluindo erros detalhados da API do Telegram.
 
 ---
 
 ## Solução de problemas
 
-* **Erro 400 Bad Request no Telegram:**
-  O script sanitiza caracteres especiais e trunca textos grandes. Verifique se o chat\_id está correto e o bot é membro do grupo.
+- **Erro 400 Bad Request no Telegram:**
+  O script sanitiza caracteres especiais e trunca textos grandes. Verifique se o chat_id está correto e o bot é membro do grupo.
 
-* **Erro SSL/CERTIFICATE\_VERIFY\_FAILED:**
+- **Erro SSL/CERTIFICATE_VERIFY_FAILED:**
   Use `certifi` como no código e execute:
 
   ```sh
-  python -m pip install --upgrade certifi
-  python -m certifi
+  pip install certifi
   ```
 
-* **429 Too Many Requests:**
+- **429 Too Many Requests:**
   O Telegram limita o envio de mensagens/arquivos. O script adiciona `time.sleep(3)` entre anexos. Diminua a frequência de verificação se necessário.
 
-* **Envio de anexos com nomes estranhos/falha:**
-  O código remove caracteres não permitidos dos nomes dos arquivos.
+- **Envio de anexos com nomes estranhos/falha:**
+  O código normaliza nomes de arquivos para evitar caracteres inválidos.
+
+- **Problemas com múltiplas contas Outlook:**
+  O script permite escolher a conta ao iniciar. Se não aparecerem todas, verifique permissões do Outlook.
 
 ---
 
 ## Observações
 
-* O script só pode rodar no Windows com Outlook instalado.
-* O bot só consegue enviar arquivos de até 50MB (limite do Telegram para bots).
-* O delay entre anexos pode ser aumentado se você continuar recebendo erros 429.
-* O ciclo de verificação (default: 5 minutos) pode ser alterado modificando `time.sleep(300)` no código.
+- O script só pode rodar no Windows com Outlook instalado.
+- O bot só consegue enviar arquivos de até 50MB (limite do Telegram para bots).
+- O delay entre anexos pode ser aumentado se você continuar recebendo erros 429.
+- O ciclo de verificação (default: 5 minutos) pode ser alterado modificando o valor de `time.sleep(300)` no código.
+- O banco de dados `email_sent.db` pode ser apagado para "resetar" o histórico de e-mails enviados (não recomendado em produção).
 
 ---
 
@@ -147,4 +150,4 @@ Projeto livre para uso educacional e institucional.
 
 ## Sugestões ou dúvidas?
 
-Abra uma *issue* ou entre em contato pelo Telegram.
+Contato *LinkedIn*: [Carlos Felipe Dalan Campanari](https://www.linkedin.com/in/carlos-campanari/)

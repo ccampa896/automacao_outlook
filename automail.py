@@ -5,35 +5,28 @@ import requests
 import certifi
 import datetime
 import re
+import sqlite3
 from dotenv import load_dotenv
 
-# Carrega variáveis do .env
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-ENTRYID_FILE = "last_entryid.txt"
+DB_FILE = "email_sent.db"
 
-# --- 1. Função para "sanitizar" HTML para Telegram ---
 def sanitize_html(text):
-    # Remove tags HTML abertas não fechadas e caracteres problemáticos para o Telegram
-    # Substitui <, > e & pelos equivalentes HTML
     text = str(text)
     text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    # Remove códigos de controle problemáticos do Outlook
     text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', text)
     return text
 
-# --- 2. Limite de tamanho do texto do Telegram ---
 def truncate_text(text, max_length=4000):
     if len(text) > max_length:
         return text[:max_length] + '\n\n(Mensagem truncada pelo limite do Telegram)'
     return text
 
-# --- 3. Normalizar nomes de arquivos ---
 def normalize_filename(fname):
-    # Remove ou substitui caracteres problemáticos
     fname = re.sub(r'[^\w\-. ]', '_', fname)
     if not fname.strip():
         fname = "anexo_sem_titulo"
@@ -86,43 +79,71 @@ def escolher_conta(outlook):
         except ValueError:
             print("Digite um número válido.")
 
-def carregar_ultimo_entryid():
-    if os.path.exists(ENTRYID_FILE):
-        with open(ENTRYID_FILE, "r") as f:
-            linha = f.read().strip()
-            if linha:
-                partes = linha.split("  ", 1)
-                if len(partes) == 2:
-                    return partes[0], partes[1]
-                return partes[0], None
-    return None, None
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sent_emails (
+            entry_id TEXT PRIMARY KEY,
+            sent_at TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-def salvar_ultimo_entryid(entryid, datahora):
-    with open(ENTRYID_FILE, "w") as f:
-        f.write(f"{entryid}  {datahora}")
+def already_sent(entry_id):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM sent_emails WHERE entry_id = ?", (entry_id,))
+    result = cur.fetchone()
+    conn.close()
+    return result is not None
+
+def mark_as_sent(entry_id):
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT OR IGNORE INTO sent_emails (entry_id, sent_at) VALUES (?, ?)",
+        (entry_id, datetime.datetime.now().strftime("%d/%m/%Y - %H:%M"))
+    )
+    conn.commit()
+    conn.close()
+
+def get_last_checkpoint():
+    conn = sqlite3.connect(DB_FILE)
+    cur = conn.cursor()
+    cur.execute("SELECT entry_id FROM sent_emails ORDER BY sent_at DESC LIMIT 1")
+    row = cur.fetchone()
+    conn.close()
+    if row:
+        return row[0]
+    return None
+
+def set_initial_checkpoint(entry_id):
+    # Salva apenas o EntryID do e-mail mais recente sem processar nada, como marco inicial
+    mark_as_sent(entry_id)
+    print(f"Primeira execução: Definindo marco inicial. EntryID inicial: {entry_id}")
 
 def monitorar_caixa_entrada():
     print("Abrindo Outlook...")
     outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
     conta = escolher_conta(outlook)
     inbox = conta.Folders["Caixa de Entrada"]
-
     mensagens = inbox.Items
-    mensagens.Sort("[ReceivedTime]", True)  # Mais recentes primeiro
+    mensagens.Sort("[ReceivedTime]", True)
 
-    # Carrega último EntryID salvo (se houver)
-    ultimo_id, ultima_datahora = carregar_ultimo_entryid()
+    init_db()
+    last_checkpoint = get_last_checkpoint()
 
-    if ultimo_id:
-        print(f"Arquivo de persistência encontrado (EntryID: {ultimo_id}, Data/Hora: {ultima_datahora}). Vai monitorar e-mails que chegarem após o último processado.")
-    else:
+    if not last_checkpoint:
+        # Primeira execução: define o marco zero, não processa e-mail algum
         if len(mensagens) > 0:
-            ultimo_id = mensagens[0].EntryID
-            ultima_datahora = datetime.datetime.now().strftime("%d/%m/%Y - %H:%M")
-            salvar_ultimo_entryid(ultimo_id, ultima_datahora)
-            print(f"Ignorando {len(mensagens)} e-mails antigos. Só vai monitorar novos a partir de agora.")
+            entry_id = mensagens[0].EntryID
+            set_initial_checkpoint(entry_id)
+            print("Marcação de marco inicial realizada. Os e-mails anteriores não serão processados.")
         else:
-            print("Nenhum e-mail encontrado. Vai monitorar todos os próximos.")
+            print("Nenhum e-mail na caixa de entrada. Vai monitorar os próximos.")
+        last_checkpoint = get_last_checkpoint()
 
     print("Monitorando novos e-mails a cada 5 minutos...\n")
     while True:
@@ -131,12 +152,16 @@ def monitorar_caixa_entrada():
         mensagens.Sort("[ReceivedTime]", True)
         novos = []
         for msg in mensagens:
-            if msg.EntryID == ultimo_id:
+            entry_id = msg.EntryID
+            if entry_id == last_checkpoint:
                 break
+            if already_sent(entry_id):
+                continue  # Apenas por segurança, não processa já enviados
             novos.append(msg)
         if novos:
             print(f"{len(novos)} novo(s) e-mail(is) recebido(s).")
             for msg in reversed(novos):
+                entry_id = msg.EntryID
                 try:
                     subject = sanitize_html(msg.Subject or '(Sem assunto)')
                     sender = sanitize_html(msg.SenderName or '(Sem remetente)')
@@ -144,7 +169,6 @@ def monitorar_caixa_entrada():
                     body = truncate_text(body)
                     text = f"<b>Novo e-mail!</b>\n<b>De:</b> {sender}\n<b>Assunto:</b> {subject}\n\n{body}"
                     send_telegram_text(text)
-                    # Anexos
                     attachments = msg.Attachments
                     for i in range(attachments.Count):
                         attachment = attachments.Item(i+1)
@@ -155,13 +179,12 @@ def monitorar_caixa_entrada():
                             file_bytes = f.read()
                         send_telegram_file(fname, file_bytes)
                         os.remove(temp_path)
-                        time.sleep(3)  # Aguarda 3 segundos entre os envios de anexos
+                        time.sleep(3)
+                    mark_as_sent(entry_id)
                 except Exception as e:
                     print(f"Erro ao processar novo e-mail: {e}")
-            # Atualiza EntryID processado no disco, junto com data/hora
-            ultimo_id = mensagens[0].EntryID
-            ultima_datahora = datetime.datetime.now().strftime("%d/%m/%Y - %H:%M")
-            salvar_ultimo_entryid(ultimo_id, ultima_datahora)
+            # Atualiza o marco para o próximo ciclo
+            last_checkpoint = get_last_checkpoint()
         else:
             agora = datetime.datetime.now().strftime("%d/%m/%Y - %H:%M")
             print(f"{agora} --> Nenhum e-mail novo.")
