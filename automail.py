@@ -21,10 +21,11 @@ def sanitize_html(text):
     text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', text)
     return text
 
-def truncate_text(text, max_length=4000):
-    if len(text) > max_length:
-        return text[:max_length] + '\n\n(Mensagem truncada pelo limite do Telegram)'
-    return text
+def build_telegram_message(sender, subject, body, max_length=4000):
+    message = f"<b>Novo e-mail!</b>\n<b>De:</b> {sender}\n<b>Assunto:</b> {subject}\n\n{body}"
+    if len(message) > max_length:
+        message = message[:(max_length-40)] + "\n\n(Mensagem truncada pelo limite do Telegram)"
+    return message
 
 def normalize_filename(fname):
     fname = re.sub(r'[^\w\-. ]', '_', fname)
@@ -32,7 +33,7 @@ def normalize_filename(fname):
         fname = "anexo_sem_titulo"
     return fname
 
-def send_telegram_text(text):
+def send_telegram_text(text, subject='', sender=''):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {
         "chat_id": CHAT_ID,
@@ -47,6 +48,7 @@ def send_telegram_text(text):
         print(f"Erro ao enviar texto ao Telegram: {e}")
         if hasattr(e, 'response') and e.response is not None:
             print(f"Detalhe do erro: {e.response.text}")
+            print(f"Falha no envio do e-mail com assunto: '{subject}' de '{sender}'.")
 
 def send_telegram_file(filename, file_bytes, mime_type="application/octet-stream"):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
@@ -120,7 +122,6 @@ def get_last_checkpoint():
     return None
 
 def set_initial_checkpoint(entry_id):
-    # Salva apenas o EntryID do e-mail mais recente sem processar nada, como marco inicial
     mark_as_sent(entry_id)
     print(f"Primeira execução: Definindo marco inicial. EntryID inicial: {entry_id}")
 
@@ -156,7 +157,7 @@ def monitorar_caixa_entrada():
             if entry_id == last_checkpoint:
                 break
             if already_sent(entry_id):
-                continue  # Apenas por segurança, não processa já enviados
+                continue
             novos.append(msg)
         if novos:
             print(f"{len(novos)} novo(s) e-mail(is) recebido(s).")
@@ -166,9 +167,8 @@ def monitorar_caixa_entrada():
                     subject = sanitize_html(msg.Subject or '(Sem assunto)')
                     sender = sanitize_html(msg.SenderName or '(Sem remetente)')
                     body = sanitize_html(msg.Body or '(Sem corpo de texto)')
-                    body = truncate_text(body)
-                    text = f"<b>Novo e-mail!</b>\n<b>De:</b> {sender}\n<b>Assunto:</b> {subject}\n\n{body}"
-                    send_telegram_text(text)
+                    text = build_telegram_message(sender, subject, body)
+                    send_telegram_text(text, subject, sender)
                     attachments = msg.Attachments
                     for i in range(attachments.Count):
                         attachment = attachments.Item(i+1)
