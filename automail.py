@@ -14,6 +14,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 DB_FILE = "email_sent.db"
+SKIP_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"}  # Extensões de imagem para ignorar
 
 def sanitize_html(text):
     text = str(text)
@@ -173,6 +174,10 @@ def monitorar_caixa_entrada():
                     for i in range(attachments.Count):
                         attachment = attachments.Item(i+1)
                         fname = normalize_filename(attachment.FileName)
+                        ext = os.path.splitext(fname)[1].lower()
+                        if ext in SKIP_IMAGE_EXTENSIONS:
+                            print(f"Anexo '{fname}' ignorado (imagem: {ext})")
+                            continue
                         temp_path = os.path.join(os.getcwd(), fname)
                         attachment.SaveAsFile(temp_path)
                         with open(temp_path, "rb") as f:

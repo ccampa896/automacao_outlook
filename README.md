@@ -12,7 +12,7 @@ Ideal para ambientes corporativos que utilizam Microsoft Outlook e não têm sup
 * Persistência robusta: utiliza banco de dados SQLite para garantir que e-mails não sejam reenviados, mesmo após reiniciar o script.
 * Envia texto do e-mail (assunto, remetente, corpo) para o Telegram com formatação HTML e sanitização para evitar erros de API.
 * Truncamento automático de textos longos para evitar erros do Telegram.
-* Envia todos os anexos do e-mail para o Telegram, com nomes de arquivos normalizados.
+* Envia todos os anexos do e-mail para o Telegram, com nomes de arquivos normalizados, **exceto imagens PNG, JPG e GIF** (imagens não são enviadas).
 * Delay automático entre envio de anexos para evitar bloqueio por excesso de requisições (limite do Telegram).
 * Logs detalhados no console, incluindo data/hora de cada verificação e detalhes de erros.
 * Checkpoint automático: na primeira execução, marca o e-mail mais recente como referência e só processa e-mails novos a partir daí.
@@ -113,7 +113,7 @@ python automail.py
 * A cada ciclo (default: 5 minutos), verifica se há novos e-mails:
 
   * Se houver, envia mensagem para o Telegram com remetente, assunto e corpo do e-mail (com sanitização e truncamento para evitar erros 400 da API).
-  * Todos os anexos são enviados para o grupo, um por um, com um atraso de 3 segundos entre cada envio para evitar limites da API.
+  * Todos os anexos **não-imagem** são enviados para o grupo, um por um, com um atraso de 3 segundos entre cada envio para evitar limites da API. **Anexos de imagem (png, jpg, gif) são ignorados!**
   * Se o e-mail já foi enviado anteriormente (EntryID registrado no banco), ele é ignorado (mesmo após reiniciar).
 * Nomes de arquivos de anexo são normalizados para evitar caracteres inválidos.
 * Logs detalhados são exibidos no console, incluindo erros detalhados da API do Telegram. Caso uma mensagem seja grande demais para o Telegram, ela é truncada automaticamente antes do envio.
@@ -154,6 +154,7 @@ python automail.py
 * O delay entre anexos pode ser aumentado se você continuar recebendo erros 429.
 * O ciclo de verificação (default: 5 minutos) pode ser alterado modificando o valor de `time.sleep(300)` no código.
 * O banco de dados `email_sent.db` pode ser apagado para "resetar" o histórico de e-mails enviados (não recomendado em produção).
+* **Anexos do tipo imagem (png, jpg, gif) são ignorados e não enviados ao Telegram.**
 
 ---
 
@@ -168,4 +169,3 @@ Projeto livre para uso educacional e institucional.
 Contato *LinkedIn*: [Carlos Felipe Dalan Campanari](https://www.linkedin.com/in/carlos-campanari/)
 
 ---
-
