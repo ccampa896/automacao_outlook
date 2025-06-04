@@ -1,6 +1,6 @@
 # Outlook Email to Telegram Notifier
 
-Este projeto automatiza o envio de notificações para o Telegram sempre que um novo e-mail chega na sua caixa de entrada do Outlook Desktop. O script lê assunto, remetente, corpo do e-mail e envia todos os anexos para um grupo ou canal do Telegram.
+Este projeto automatiza o envio de notificações para o Telegram sempre que um novo e-mail chega na sua caixa de entrada do Outlook Desktop. O script lê assunto, remetente, corpo do e-mail e envia todos os anexos para um grupo ou canal do Telegram, **exceto imagens PNG, JPG e GIF** (essas imagens não são enviadas).
 
 Ideal para ambientes corporativos que utilizam Microsoft Outlook e não têm suporte a IMAP/POP externo.
 

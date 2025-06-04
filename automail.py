@@ -165,6 +165,12 @@ def monitorar_caixa_entrada():
             for msg in reversed(novos):
                 entry_id = msg.EntryID
                 try:
+                    # Garante que só processa itens do tipo "MailItem"
+                    if not hasattr(msg, "Class") or msg.Class != 43:
+                        print(f"Item ignorado (não é e-mail ou tipo desconhecido). EntryID: {entry_id}")
+                        mark_as_sent(entry_id)
+                        continue
+
                     subject = sanitize_html(msg.Subject or '(Sem assunto)')
                     sender = sanitize_html(msg.SenderName or '(Sem remetente)')
                     body = sanitize_html(msg.Body or '(Sem corpo de texto)')
