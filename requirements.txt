@@ -1,0 +1,5 @@
+python-dotenv
+pywin32
+requests
+certifi
+msal
